@@ -166,3 +166,219 @@ public class DataCleaningReducer extends Reducer<Text, Text, Text, Text> {
 
 This Hadoop MapReduce program processes literature data, cleans it, and prepares it for further text mining or analysis tasks. It helps remove irrelevant data, tokenize the content, and eliminate stop words to make the content more suitable for applications like NLP and sentiment analysis.
 
+### Task 2: Word Frequency Analysis with Lemmatization
+Overview
+This task builds upon Task 1 (Data Cleaning) by performing word frequency analysis while applying lemmatization to normalize word forms. The goal is to compute the frequency of each word’s base form (lemma) across different books and years.
+
+Using Hadoop MapReduce, this program processes cleaned text from Task 1, splits it into individual words, applies lemmatization using an NLP library (such as WordNet Lemmatizer), and calculates word frequency across different historical texts.
+
+Objectives
+Process cleaned text data from Task 1.
+
+Split sentences into words (tokenization).
+
+Apply lemmatization to normalize words to their base form (e.g., "running" → "run").
+
+Count the frequency of each lemma per book and year using MapReduce.
+
+Produce a structured dataset listing word frequencies per book and year.
+
+Input Dataset
+The input dataset consists of cleaned book content from Task 1. The data is formatted as:
+
+BookID	Year	Cleaned Text
+101	1818	"monster create fear creature terrifying"
+102	1847	"love strong man woman desire"
+BookID: Unique identifier for each book.
+
+Year: Year of publication.
+
+Cleaned Text: The processed text, free from punctuation and stop words.
+
+This dataset is stored in CSV format, where each line represents a book's processed content.
+
+### Implementation Details
+1. WordFrequencyDriver.java (Main Entry Point)
+The driver class is responsible for:
+
+Configuring and setting up the Hadoop Job.
+
+Specifying the Mapper (WordFrequencyMapper.java) and Reducer (WordFrequencyReducer.java).
+
+Defining input and output file paths.
+
+### Code:
+java
+package com.example;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class WordFrequencyDriver {
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
+        if (otherArgs.length != 2) {
+            System.err.println("Usage: WordFrequencyDriver <input path> <output path>");
+            System.exit(2);
+        }
+
+        Job job = Job.getInstance(conf, "Word Frequency Analysis with Lemmatization");
+        job.setJarByClass(WordFrequencyDriver.class);
+        job.setMapperClass(WordFrequencyMapper.class);
+        job.setReducerClass(WordFrequencyReducer.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+
+        FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
+        FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
+
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
+2. WordFrequencyMapper.java (Mapping Phase)
+The Mapper processes each line of the input file, tokenizes words, applies lemmatization, and emits key-value pairs:
+
+Key → (BookID, Lemma, Year)
+Value → 1 (to indicate word occurrence)
+
+Key Features:
+Tokenization: Splits text into individual words.
+
+Lemmatization: Converts words to their base forms.
+
+Output Format: Emits (bookID, lemma, year) -> 1 pairs.
+
+### Code:
+java
+package com.example;
+
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Mapper;
+import java.io.IOException;
+import java.util.StringTokenizer;
+import net.sf.extjwnl.dictionary.Dictionary;
+import net.sf.extjwnl.data.IndexWord;
+import net.sf.extjwnl.data.POS;
+
+public class WordFrequencyMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
+    private static final IntWritable one = new IntWritable(1);
+    private Dictionary dictionary;
+
+    @Override
+    protected void setup(Context context) throws IOException {
+        try {
+            dictionary = Dictionary.getDefaultResourceInstance();
+        } catch (Exception e) {
+            throw new IOException("Error initializing WordNet dictionary", e);
+        }
+    }
+
+    @Override
+    public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+        String line = value.toString().trim();
+        String[] fields = line.split(",", 3); // Split only into BookID, Year, Content
+
+        if (fields.length < 3) {
+            return; // Skip malformed lines
+        }
+
+        String bookID = fields[0].trim();
+        String year = fields[1].trim();
+        String content = fields[2].trim();
+
+        StringTokenizer tokenizer = new StringTokenizer(content);
+        
+        while (tokenizer.hasMoreTokens()) {
+            String word = tokenizer.nextToken().toLowerCase();
+            
+            // Apply lemmatization
+            String lemma = getLemma(word);
+            
+            // Emit (bookID, lemma, year) -> 1
+            context.write(new Text(bookID + "," + lemma + "," + year), one);
+        }
+    }
+
+    private String getLemma(String word) {
+        try {
+            IndexWord indexWord = dictionary.lookupIndexWord(POS.NOUN, word);
+            if (indexWord != null) {
+                return indexWord.getLemma();
+            }
+        } catch (Exception e) {
+            return word; // Default to original word if lemmatization fails
+        }
+        return word;
+    }
+}
+3. WordFrequencyReducer.java (Reducing Phase)
+The Reducer aggregates word counts per (BookID, Lemma, Year).
+
+Input: (bookID, lemma, year) -> [1, 1, 1, ...]
+Processing: Sum occurrences of each lemma.
+Output: (bookID, lemma, year) -> frequency
+
+### Code:
+java
+package com.example;
+
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Reducer;
+import java.io.IOException;
+
+public class WordFrequencyReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+    @Override
+    public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+        int sum = 0;
+        for (IntWritable value : values) {
+            sum += value.get(); // Sum word occurrences
+        }
+        context.write(key, new IntWritable(sum));
+    }
+}
+How to Run the Program
+### Step 1: Prepare Input Files
+Ensure the input dataset (cleaned text) is stored in HDFS:
+
+bash
+hdfs dfs -mkdir -p /user/hadoop/input
+hdfs dfs -put cleaned_books.csv /user/hadoop/input/
+### Step 2: Compile and Package
+Compile the Java program and create a JAR file:
+
+bash
+hadoop com.sun.tools.javac.Main WordFrequency*.java
+jar cf WordFrequency.jar WordFrequency*.class
+### Step 3: Run the Hadoop Job
+Execute the MapReduce job:
+
+bash
+hadoop jar WordFrequency.jar com.example.WordFrequencyDriver /user/hadoop/input /user/hadoop/output
+### Step 4: View the Results
+Fetch the results from HDFS:
+
+bash
+hdfs dfs -cat /user/hadoop/output/part-r-00000
+### Task 2 Conclusion
+This Hadoop MapReduce job analyzes word frequency while applying lemmatization to standardize word forms. The output is a structured dataset showing the occurrence of each lemma per book and year, making it useful for trend analysis, topic modeling, and sentiment analysis in historical literature.
+
+This task sets the foundation for further NLP analysis, including sentiment scoring, thematic trends, and historical text comparison. 🚀
+
+
+
+
+
+
+
+
+
