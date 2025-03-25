@@ -525,5 +525,3 @@ docker cp resourcemanager:/opt/hadoop-2.7.4/share/hadoop/mapreduce/output1/ ./ou
 This completes the sentiment scoring process using Hadoop MapReduce. The output files contain sentiment scores for texts, aggregated by book and year.
 
 ---
-
-This README provides a structured guide to execute Task 3. Let me know if you need any refinements! 🚀
