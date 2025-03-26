@@ -631,4 +631,172 @@ docker cp resourcemanager:/opt/hadoop-2.7.4/share/hadoop/mapreduce/output2/ ./ou
 
 This completes the trend analysis and aggregation process. The output files summarize sentiment scores and word frequencies over decades, providing insights into historical trends. Visualization can further enhance the interpretation of these results.
 
+-----
+# Task 5: Bigram Analysis using Hive UDF
+
+## Overview
+
+This task involves extracting and analyzing bigrams (pairs of consecutive words) from the lemmatized text output of Task 2. A custom Hive User-Defined Function (UDF) is implemented in Java to process text data and generate bigrams. The results are stored in a Hive table for further analysis.
+
+## Prerequisites
+
+Before running this task, ensure you have the following:
+
+- **Hadoop and Hive** set up in Docker.
+- **Lemmatized text dataset (`output2/` from Task 2)** available in HDFS.
+- **Java & Maven installed** in the environment.
+
+## Setup Instructions
+
+### 1. Navigate to the Task Directory
+
+Open a terminal and move to the directory containing Task 5 files:
+
+```bash
+cd task5
+```
+
+### 2. Start the Hadoop and Hive Cluster
+
+Ensure that the Hadoop cluster and Hive metastore are running in Docker:
+
+```bash
+docker compose up -d
+```
+
+### 3. Build the UDF
+
+Compile the Java UDF using Maven:
+
+```bash
+mvn clean package
+```
+
+### 4. Copy JAR File to Hadoop Container
+
+Move the compiled JAR file to the Hive container:
+
+```bash
+docker cp target/BigramAnalysis-0.0.1-SNAPSHOT.jar hive-server:/opt/hive/lib/
+```
+
+### 5. Restart Hive to Load the UDF
+
+Access the Hive container and restart the service:
+
+```bash
+docker exec -it hive-server /bin/bash
+hive --service metastore &
+hive --service hiveserver2 &
+exit
+```
+
+### 6. Ensure Input Data is Available in HDFS
+
+Check if the lemmatized text data (`output2/`) is already in HDFS:
+
+```bash
+hadoop fs -ls /output2
+```
+
+If not, copy the dataset into HDFS:
+
+```bash
+hadoop fs -put output2 /input/dataset
+```
+
+### 7. Create a Hive Table for Lemmatized Text
+
+Open Hive and create a table for storing lemmatized text:
+
+```sql
+CREATE EXTERNAL TABLE IF NOT EXISTS lemmatized_text (
+    bookID STRING,
+    year INT,
+    text STRING
+) ROW FORMAT DELIMITED
+FIELDS TERMINATED BY '\t'
+STORED AS TEXTFILE
+LOCATION '/input/dataset/output2';
+```
+
+### 8. Register the UDF in Hive
+
+```sql
+CREATE TEMPORARY FUNCTION extract_bigrams AS 'task5.BigramUDF';
+```
+
+### 9. Run Bigram Analysis
+
+Extract bigrams from the text data:
+
+```sql
+SELECT bookID, year, extract_bigrams(text) AS bigrams 
+FROM lemmatized_text
+LIMIT 10;
+```
+
+### 10. Aggregate Bigram Frequencies
+
+Count occurrences of each bigram:
+
+```sql
+SELECT bigram, COUNT(*) AS frequency 
+FROM ( 
+    SELECT explode(extract_bigrams(text)) AS bigram 
+    FROM lemmatized_text 
+) bigram_table
+GROUP BY bigram
+ORDER BY frequency DESC
+LIMIT 20;
+```
+
+### 11. Save Results into a Hive Table
+
+Create a table to store bigram frequencies:
+
+```sql
+CREATE TABLE bigram_frequencies AS 
+SELECT bigram, COUNT(*) AS frequency 
+FROM ( 
+    SELECT explode(extract_bigrams(text)) AS bigram 
+    FROM lemmatized_text 
+) bigram_table
+GROUP BY bigram;
+```
+
+### 12. Query for Sentiment-Related Bigrams
+
+Analyze sentiment-related bigrams based on prior sentiment scoring:
+
+```sql
+SELECT bf.bigram, bf.frequency, s.sentiment_score
+FROM bigram_frequencies bf
+JOIN sentiment_scores s ON bf.bigram = s.word
+ORDER BY bf.frequency DESC;
+```
+
+### 13. Retrieve Output Data
+
+Retrieve the bigram frequency results from Hive:
+
+```sql
+SELECT * FROM bigram_frequencies LIMIT 50;
+```
+
+Export the results to a local file:
+
+```sql
+INSERT OVERWRITE LOCAL DIRECTORY '/output/bigram_results' ROW FORMAT DELIMITED FIELDS TERMINATED BY '\t' SELECT * FROM bigram_frequencies;
+```
+
+Copy the results from the Hive container to the local machine:
+
+```bash
+docker cp hive-server:/output/bigram_results ./bigram_results
+```
+
+## Conclusion
+
+This completes the bigram analysis using Hive UDF. The results provide insights into common word pairings and their frequency in historical texts, enabling further exploration of linguistic patterns and sentiment trends.
 
