@@ -525,3 +525,110 @@ docker cp resourcemanager:/opt/hadoop-2.7.4/share/hadoop/mapreduce/output1/ ./ou
 This completes the sentiment scoring process using Hadoop MapReduce. The output files contain sentiment scores for texts, aggregated by book and year.
 
 ---
+
+
+
+# Task 4: Trend Analysis & Aggregation
+
+## Overview
+
+This task aggregates sentiment scores and word frequencies over broader time intervals (e.g., by decade) to identify long-term trends and potential correlations with historical events. The data from previous tasks will be processed using a Hadoop MapReduce job to group by decade and analyze trends.
+
+## Prerequisites
+
+Before running this task, ensure you have the following:
+
+- **Hadoop and MapReduce** set up in Docker.
+- **Sentiment scoring output (`output1/` from Task 3)** available in HDFS.
+- **Java & Maven installed** in the environment.
+
+## Setup Instructions
+
+### 1. Navigate to the Task Directory
+
+Open a terminal and move to the directory containing Task 4 files:
+
+```bash
+cd task4
+```
+
+### 2. Start the Hadoop Cluster
+
+Ensure that the Hadoop cluster is running in Docker:
+
+```bash
+docker compose up -d
+```
+
+### 3. Build the Project
+
+Compile the Java project using Maven:
+
+```bash
+mvn clean package
+```
+
+### 4. Copy JAR File to Hadoop Container
+
+Move the compiled JAR file to the Hadoop ResourceManager container:
+
+```bash
+docker cp target/DocumentSimilarity-0.0.1-SNAPSHOT.jar resourcemanager:/opt/hadoop-2.7.4/share/hadoop/mapreduce/
+```
+
+### 5. Ensure Input Data is Available in HDFS
+
+Check if the sentiment scoring output (`output1/`) is already in HDFS:
+
+```bash
+hadoop fs -ls /output1
+```
+
+If not, copy the dataset into HDFS:
+
+```bash
+hadoop fs -put output1 /input/dataset
+```
+
+### 6. Run the Trend Analysis MapReduce Job
+
+Execute the MapReduce job for trend analysis and aggregation:
+
+```bash
+hadoop jar /opt/hadoop-2.7.4/share/hadoop/mapreduce/DocumentSimilarity-0.0.1-SNAPSHOT.jar com.example.controller.TrendAnalysisDriver /output1 /output2
+```
+
+### 7. Verify Output
+
+Check the results by retrieving the output files:
+
+```bash
+hadoop fs -cat /output2/*
+```
+
+### 8. Copy Output Data from HDFS to Local Machine
+
+#### Step 1: Copy Output from HDFS to Hadoop Container
+
+```bash
+hdfs dfs -get /output2 /opt/hadoop-2.7.4/share/hadoop/mapreduce/
+```
+
+#### Step 2: Exit the Container
+
+```bash
+exit
+```
+
+#### Step 3: Copy Output from the Container to Local System
+
+```bash
+docker cp resourcemanager:/opt/hadoop-2.7.4/share/hadoop/mapreduce/output2/ ./output
+```
+
+
+## Conclusion
+
+This completes the trend analysis and aggregation process. The output files summarize sentiment scores and word frequencies over decades, providing insights into historical trends. Visualization can further enhance the interpretation of these results.
+
+
